@@ -15,6 +15,15 @@ project(INSPECT_PTHREADS4W VERSION 0001
 
 enable_testing()
 
+option(PT4W_BUILD_TESTING "Build the time and space consuming test suite for pthreads4w" OFF)
+
+
+# Set the default build type
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build, options are: None, Debug, Release, RelWithDebInfo, or MinSizeRel." FORCE)
+    message(STATUS "No build type specified, defaulting to Release.")
+endif()
+
 
 ##########################################
 # POSIX Threads for Windows (pthreads4w) #
@@ -35,23 +44,31 @@ if(WIN32)
         GIT_REPOSITORY  https://github.com/jwinarske/pthreads4w.git
         GIT_TAG         origin/cmake
         GIT_SHALLOW     ON
+        EXCLUDE_FROM_ALL
+        SYSTEM
     )
+
     # Check if population has already been performed
     FetchContent_GetProperties(pthreads4w)
     if(NOT pthreads4w_POPULATED)
-        message(STATUS "NOT POPULATED")
         # Fetch the content using previously declared details.
         # This caches pthreads4w_SOURCE_DIR, pthreads4w_BINARY_DIR and pthreads4w_POPULATED.
         FetchContent_Populate(pthreads4w)
+        #FetchContent_MakeAvailable(pthreads4w)
 
-        configure_file(cmake/CMakePresets-pthreads4w.json
-                       _deps/pthreads4w-src/CMakePresets.json
-                       COPYONLY)
-        #FetchContent_Populate(pthreads4w)
-        message(STATUS "CMakePresets should have been copied")
-    endif()
+        execute_process(COMMAND cmake -S ${pthreads4w_SOURCE_DIR} -B ${pthreads4w_BINARY_DIR} -G "NMake Makefiles" -D CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -D BUILD_TESTING=${PT4W_BUILD_TESTING}
+                        WORKING_DIRECTORY build/_deps/pthreads4w-src
+                        RESULT_VARIABLE PT4W_RETURN_CODE
+                        ERROR_VARIABLE PT4W_ERROR_MESSAGE
+                        COMMAND_ECHO STDOUT)
+        if(NOT ${PT4W_RETURN_CODE} EQUAL 0)
+            # This will stop the installation
+            message(FATAL_ERROR "${PT4W_RETURN_CODE}: ${PT4W_ERROR_MESSAGE}")
+        endif()
+    endif() # NOT pthreads4w_POPULATED
 
-    #FetchContent_MakeAvailable(pthreads4w)
     message(CHECK_PASS "done")
 
-endif()
+    add_subdirectory(${pthreads4w_SOURCE_DIR} ${pthreads4w_BINARY_DIR} EXCLUDE_FROM_ALL SYSTEM)
+
+endif() # WIN32
