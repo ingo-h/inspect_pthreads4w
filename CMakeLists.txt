@@ -1,5 +1,7 @@
 # Copyright (C) 2024+ GPL 3 and higher by Ingo Höft, <Ingo@Hoeft-online.de>
-# Redistribution only with this Copyright remark. Last modified: 2024-11-03
+# Redistribution only with this Copyright remark. Last modified: 2024-11-04
+
+# REF: [Install third party POSIX Threads for Windows](https://stackoverflow.com/q/69275376/5014688)
 
 # Configure and build with:
 # cmake -S . -B build [-D CMAKE_BUILD_TYPE=Release|Debug]
@@ -17,7 +19,6 @@ enable_testing()
 
 option(PT4W_BUILD_TESTING "Build the time and space consuming test suite for pthreads4w" OFF)
 
-
 # Set the default build type
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build, options are: None, Debug, Release, RelWithDebInfo, or MinSizeRel." FORCE)
@@ -29,46 +30,39 @@ endif()
 # POSIX Threads for Windows (pthreads4w) #
 ##########################################
 if(WIN32)
-    # This dependent project must use generator "NMake Makefiles" that differs
-    # from default generator "Visual Studio *". NMake Makefiles does not
-    # support platform specification with CMake option '-A'. So we cannot use
-    # add_directory() because this will also compile the dependent project with
-    # "Visual Studio *". We have to configure and build it in separate
-    # processes.
+    include(ExternalProject)
+    message(CHECK_START "Add external project \"POSIX Threads for Windows\"")
 
-    include(FetchContent)
-    message(CHECK_START "Download and configuring POSIX Threads for Windows")
-
-    FetchContent_Declare(
-        pthreads4w
+    ExternalProject_Add(pthreads4w
+        # Download
         GIT_REPOSITORY  https://github.com/jwinarske/pthreads4w.git
         GIT_TAG         origin/cmake
         GIT_SHALLOW     ON
-        EXCLUDE_FROM_ALL
-        SYSTEM
+
+        # Configure
+        CMAKE_GENERATOR "NMake Makefiles"
+        CMAKE_CACHE_ARGS -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE} -DBUILD_TESTING:BOOL=${PT4W_BUILD_TESTING}
+        CONFIGURE_HANDLED_BY_BUILD ON
     )
 
-    # Check if population has already been performed
-    FetchContent_GetProperties(pthreads4w)
-    if(NOT pthreads4w_POPULATED)
-        # Fetch the content using previously declared details.
-        # This caches pthreads4w_SOURCE_DIR, pthreads4w_BINARY_DIR and pthreads4w_POPULATED.
-        FetchContent_Populate(pthreads4w)
-        #FetchContent_MakeAvailable(pthreads4w)
+    ExternalProject_Get_Property(pthreads4w SOURCE_DIR)
+    file(GLOB_RECURSE pthreads4w_INCLUDE_FILE CONFIGURE_DEPENDS ${SOURCE_DIR}/PTHREADS-BUILT/pthread.h)
+    cmake_path(GET pthreads4w_INCLUDE_FILE PARENT_PATH PTHREADS4W_INCLUDE_DIR)
 
-        execute_process(COMMAND cmake -S ${pthreads4w_SOURCE_DIR} -B ${pthreads4w_BINARY_DIR} -G "NMake Makefiles" -D CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -D BUILD_TESTING=${PT4W_BUILD_TESTING}
-                        WORKING_DIRECTORY build/_deps/pthreads4w-src
-                        RESULT_VARIABLE PT4W_RETURN_CODE
-                        ERROR_VARIABLE PT4W_ERROR_MESSAGE
-                        COMMAND_ECHO STDOUT)
-        if(NOT ${PT4W_RETURN_CODE} EQUAL 0)
-            # This will stop the installation
-            message(FATAL_ERROR "${PT4W_RETURN_CODE}: ${PT4W_ERROR_MESSAGE}")
-        endif()
-    endif() # NOT pthreads4w_POPULATED
+    file(GLOB_RECURSE pthreads4w_SHARED_LIBRARY CONFIGURE_DEPENDS ${SOURCE_DIR}/PTHREADS-BUILT/pthreadVC3*.lib)
+    set(UPNP_PTHREADS_SHARED_LIBRARY "${pthreads4w_SHARED_LIBRARY}" CACHE INTERNAL
+        "Name of the linkable shared library for POSIX threads" FORCE)
+
+    file(GLOB_RECURSE pthreads4w_STATIC_LIBRARY CONFIGURE_DEPENDS ${SOURCE_DIR}/PTHREADS-BUILT/libpthreadVC3*.lib)
+    set(UPNP_PTHREADS_STATIC_LIBRARY "${pthreads4w_STATIC_LIBRARY}" CACHE INTERNAL
+        "Name of the linkable static library for POSIX threads" FORCE)
+
+    # Output with cmake option --log-level=DEBUG
+    message(DEBUG "  DEBUG: pthreads4w SOURCE_DIR = ${SOURCE_DIR}")
+    message(DEBUG "  DEBUG: PTHREADS4W_INCLUDE_DIR = ${PTHREADS4W_INCLUDE_DIR}")
+    message(DEBUG "  DEBUG: UPNP_PTHREADS_SHARED_LIBRARY = ${UPNP_PTHREADS_SHARED_LIBRARY}")
+    message(DEBUG "  DEBUG: UPNP_PTHREADS_STATIC_LIBRARY = ${UPNP_PTHREADS_STATIC_LIBRARY}")
 
     message(CHECK_PASS "done")
-
-    add_subdirectory(${pthreads4w_SOURCE_DIR} ${pthreads4w_BINARY_DIR} EXCLUDE_FROM_ALL SYSTEM)
 
 endif() # WIN32
